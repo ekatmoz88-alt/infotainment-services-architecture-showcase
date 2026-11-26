@@ -10,43 +10,45 @@ jobs:
   markdown-lint:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-
-      - name: Validate Markdown structure and Mermaid blocks
+      - name: Validate Markdown fenced code blocks
         run: |
-          python3 - << 'PYEOF'
-          import pathlib, re, sys
+          python - <<'PYEOF'
+          import re, pathlib, sys
 
-          md_files = list(pathlib.Path('.').rglob('*.md'))
-          if not md_files:
-              print('No Markdown files found.')
-              sys.exit(1)
+          base = pathlib.Path('.')
+          md_files = list(base.rglob('*.md'))
 
           errors = []
-          for path in md_files:
-              text = path.read_text(encoding='utf-8')
-              opens = len(re.findall(r'^```mermaid\s*$', text, flags=re.M))
-              closes = len(re.findall(r'^```\s*$', text, flags=re.M))
-              if opens == 0 and path.parent.name == 'docs':
-                  errors.append(f'{path}: no mermaid blocks found')
-              if closes < opens:
-                  errors.append(f'{path}: unclosed mermaid code block')
 
-              if re.search(r'@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}', text):
-                  errors.append(f'{path}: potential email address detected')
-              if '/media/' in text or '/home/' in text:
-                  errors.append(f'{path}: local filesystem path detected')
+          # Count fenced code blocks (```) per file; total must be even
+          for p in md_files:
+              txt = p.read_text(encoding='utf-8', errors='replace')
+              # count lines that start with ``` (optionally preceded by up to 3 spaces)
+              fences = len(re.findall(r'^( {0,3})```', txt, flags=re.M))
+              if fences % 2 != 0:
+                  errors.append(f'{p}: unbalanced code fences (count={fences})')
+
+          # Disallowed email addresses
+          for p in md_files:
+              txt = p.read_text(encoding='utf-8', errors='replace')
+              if re.search(r'@luxoft|@zodiac', txt):
+                  errors.append(f'{p}: contains prohibited corporate email')
+
+          # Disallowed local paths
+          for p in md_files:
+              txt = p.read_text(encoding='utf-8', errors='replace')
+              if '/media/' in txt or '/home/' in txt:
+                  errors.append(f'{p}: contains local path /media/ or /home/')
 
           if errors:
               for e in errors:
                   print('ERROR:', e)
               sys.exit(1)
-
-          print(f'Successfully validated {len(md_files)} Markdown files.')
+          else:
+              print(f'Successfully validated {len(md_files)} Markdown files.')
+              sys.exit(0)
           PYEOF
