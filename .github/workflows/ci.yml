@@ -1,0 +1,59 @@
+name: Infotainment CI
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  markdown-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run markdown security linter
+        run: |
+          python - <<'PYEOF'
+          import re, pathlib, sys
+
+          repo_root = pathlib.Path('.')
+          markdown_files = list(repo_root.rglob('*.md'))
+
+          email_re = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
+          ipv4_re   = re.compile(
+              r"(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)"
+          )
+          local_path_re = re.compile(r"/media/[^\s'\"<>"]+")
+
+          errors = []
+
+          for md in markdown_files:
+              text = md.read_text(encoding="utf-8", errors="replace")
+
+              # email check
+              for m in email_re.finditer(text):
+                  errors.append(f"{md}: contains email address {m.group()!r}")
+
+              # internal IP check
+              for m in ipv4_re.finditer(text):
+                  octets = m.group().split('.')
+                  # 10.x.x.x, 192.168.x.x, 172.16-31.x.x
+                  if octets[0] == '10':
+                      errors.append(f"{md}: contains internal IP 10.x.x.x -> {m.group()!r}")
+                  elif octets[0] == '192' and octets[1] == '168':
+                      errors.append(f"{md}: contains internal IP 192.168.x.x -> {m.group()!r}")
+                  elif octets[0] == '172' and 16 <= int(octets[1]) <= 31:
+                      errors.append(f"{md}: contains internal IP 172.16-31.x.x -> {m.group()!r}")
+
+              # local path check
+              for m in local_path_re.finditer(text):
+                  errors.append(f"{md}: contains local path {m.group()!r}")
+
+          if errors:
+              for e in errors:
+                  print(e, file=sys.stderr)
+              sys.exit(1)
+          else:
+              print("All Markdown files passed the security checks.")
+              sys.exit(0)
+          PYEOF
