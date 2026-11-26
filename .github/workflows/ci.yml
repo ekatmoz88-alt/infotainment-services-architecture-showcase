@@ -10,44 +10,43 @@ jobs:
   markdown-lint:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - name: Run markdown security linter
+
+      - name: Validate Markdown structure and Mermaid blocks
         run: |
-          python - <<'PYEOF'
-          import re, pathlib, sys
+          python3 - << 'PYEOF'
+          import pathlib, re, sys
 
-          docs_dir = pathlib.Path('docs')
-          md_files = list(docs_dir.rglob('*.md'))
+          md_files = list(pathlib.Path('.').rglob('*.md'))
+          if not md_files:
+              print('No Markdown files found.')
+              sys.exit(1)
 
-          # Mermaid block check
-          mermaid_open = r'```mermaid'
-          mermaid_close = r'```'
-          for md_path in md_files:
-              text = md_path.read_text(encoding='utf-8', errors='replace')
-              opens = len(re.findall(mermaid_open, text))
-              closes = len(re.findall(mermaid_close, text))
-              if opens != closes:
-                  print(f'{md_path}: mermaid block mismatch (opens={opens}, closes={closes})')
-                  sys.exit(1)
+          errors = []
+          for path in md_files:
+              text = path.read_text(encoding='utf-8')
+              opens = len(re.findall(r'^```mermaid\s*$', text, flags=re.M))
+              closes = len(re.findall(r'^```\s*$', text, flags=re.M))
+              if opens == 0 and path.parent.name == 'docs':
+                  errors.append(f'{path}: no mermaid blocks found')
+              if closes < opens:
+                  errors.append(f'{path}: unclosed mermaid code block')
 
-          # Corporate email check
-          email_re = r'@luxoft|@zodiac'
-          for md_path in md_files:
-              text = md_path.read_text(encoding='utf-8', errors='replace')
-              if re.search(email_re, text):
-                  print(f'{md_path}: contains prohibited corporate email')
-                  sys.exit(1)
+              if re.search(r'@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}', text):
+                  errors.append(f'{path}: potential email address detected')
+              if '/media/' in text or '/home/' in text:
+                  errors.append(f'{path}: local filesystem path detected')
 
-          # Local path check
-          local_path_re = r'/media/[^\s]+'
-          for md_path in md_files:
-              text = md_path.read_text(encoding='utf-8', errors='replace')
-              if re.search(local_path_re, text):
-                  print(f'{md_path}: contains local path /media/')
-                  sys.exit(1)
+          if errors:
+              for e in errors:
+                  print('ERROR:', e)
+              sys.exit(1)
 
-          print('All Markdown files passed the security checks.')
+          print(f'Successfully validated {len(md_files)} Markdown files.')
           PYEOF
